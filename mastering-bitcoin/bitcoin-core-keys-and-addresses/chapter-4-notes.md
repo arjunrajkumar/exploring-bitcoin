@@ -54,3 +54,42 @@ errors corrected. Factual corrections and added detail are separate below.
   both the matching hash and the script's execution. If the script requires
   signatures, knowing the script alone is not enough. See
   [BIP 16](https://bips.dev/16/#specification).
+
+## 26 October 2026
+
+### Learner note
+
+Full process from private key to Pay-to-Witness-Public-Key-Hash
+
+1. Start with a private key (256 bits)
+2. Do scalar multiplication (`K = k × G`.) with fixed given generator point to get a point (520 bits)
+3. Compress the point (x,y) by Converting Y axis. 02 if y is even, 03 if y is odd (**264 bits**)
+4. Hash the compressed public key by applying `SHA256`, then `RIPEMD160` (160 bits)
+5. Split the above 160 bits into 32 groups of 5 bits
+6. Put the witness version before the 32 group. - so we now have 33 groups
+7. Calculate checksum using the network prefix, and 33 groups (6 characters) (30 bits)
+8. Convert the 33 group and checksum (6 characters) to Bech32 characters
+9. Join the network prefix (tb), separator (1) to result from 8
+10. Get the final wallet address (42 characters)
+
+### AI reply
+
+The learner note above preserves the submitted wording and numbers.
+These details clarify the process for a Testnet P2WPKH address.
+
+- **Point and encoding:** Scalar multiplication gives the point `(x, y)`.
+  Its uncompressed encoding uses 65 bytes (520 bits), including the prefix.
+  The compressed encoding stores `x` with a prefix that identifies whether
+  `y` is even or odd. It uses 33 bytes (264 bits).
+- **Hash input and output:** SHA256 takes the 33-byte compressed public key
+  and produces 32 bytes. RIPEMD160 takes those 32 bytes and produces the
+  20-byte (160-bit) public key hash. See
+  [Mastering Bitcoin: compressed public keys](https://github.com/bitcoinbook/bitcoinbook/blob/develop/ch04_keys.adoc#compressed-public-keys).
+- **Witness version and checksum:** P2WPKH uses witness version `0`, which
+  becomes `q` in the address. The checksum calculation produces six 5-bit
+  values. Step 8 converts those values to six Bech32 characters. See
+  [BIP 173: Segwit address format](https://bips.dev/173/#segwit-address-format)
+  and [checksum calculation](https://bips.dev/173/#checksum).
+- **Final length:** This Testnet P2WPKH address has 42 characters:
+  `tb` (2), separator `1` (1), version `q` (1), encoded hash (32), and
+  checksum (6). The 42-character count applies to this address format.
