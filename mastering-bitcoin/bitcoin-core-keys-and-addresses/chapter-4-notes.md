@@ -93,3 +93,21 @@ These details clarify the process for a Testnet P2WPKH address.
 - **Final length:** This Testnet P2WPKH address has 42 characters:
   `tb` (2), separator `1` (1), version `q` (1), encoded hash (32), and
   checksum (6). The 42-character count applies to this address format.
+
+## 27 October 2026
+
+### Learner note
+
+In the early versions of Bitcoin, the change was sent back to a new output
+that uses the same old public key to unlock it.
+
+### AI reply
+
+This describes the early wallet's handling of change. The
+[v0.1.5 code](https://github.com/bitcoin/bitcoin/blob/v0.1.5/main.cpp#L2506-L2524)
+reuses a key for change. The
+[v0.2.0 code](https://github.com/bitcoin/bitcoin/blob/v0.2.0/main.cpp#L2732-L2742)
+creates a new key for change.
+
+The public key is used to check a signature. Spending the output requires
+a valid signature made with the matching private key.
