@@ -104,9 +104,9 @@ that uses the same old public key to unlock it.
 ### AI reply
 
 This describes the early wallet's handling of change. The
-[v0.1.5 code](https://github.com/bitcoin/bitcoin/blob/v0.1.5/main.cpp#L2506-L2524)
+[v0.1.5 code](https://github.com/bitcoin/bitcoin/blob/v0.1.5/main.cpp#L2574-L2592)
 reuses a key for change. The
-[v0.2.0 code](https://github.com/bitcoin/bitcoin/blob/v0.2.0/main.cpp#L2732-L2742)
+[v0.2.0 code](https://github.com/bitcoin/bitcoin/blob/v0.2.0/main.cpp#L2788-L2798)
 creates a new key for change.
 
 The public key is used to check a signature. Spending the output requires
