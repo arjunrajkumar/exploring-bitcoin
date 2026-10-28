@@ -19,6 +19,7 @@ Completion of a topic is not implied by the presence of notes.
 - [Experiments and discussion](bitcoin-core-keys-and-addresses/experiment-notes.md)
 - [Python examples](bitcoin-core-keys-and-addresses/experiments/)
 - [Saving Satoshi — Chapter 5: Verify the signature](saving-satoshi/chapter-05-verify-signature/README.md) — submitted code and successful browser run, 28 October 2026.
+- [Saving Satoshi — Chapter 5: Prepare the message](saving-satoshi/chapter-05-prepare-message/README.md) — submitted code and successful browser run, 28 October 2026.
 - [Earlier questions, answers and reviews](earlier-reviews/README.md)
 
 The earlier introduction review contains the learner's full answers and corrections.
