@@ -18,3 +18,21 @@ Pruning in Bitcoin Core does not delete these separate files.
 
 These two example files are tracked in Git. Other downloaded files in the
 `blocks/` and `transactions/` folders are ignored.
+
+## AI reply
+
+[Input references](input_references.json) lists the 11 previous outputs in
+the same order as the chosen transaction's inputs. Each entry contains
+`txid`, `vout`, and the containing block's `block_hash`.
+
+The transaction IDs and output indexes were checked against the saved
+transaction. The block hashes were looked up on 29 October 2026 with the
+[mempool.space transaction status API](https://mempool.space/docs/api/rest#get-transaction-status),
+using `https://mempool.space/api/tx/{txid}/status` for each transaction ID.
+These are explorer lookup results. We will check the transactions against
+blocks from Bitcoin Core in a later step.
+
+Five previous transactions are in
+[block 144916](https://mempool.space/block/00000000000005c6aca89f188819553e63fe1d5deeea9722b43d1cd0974c7d58).
+The other six are in
+[block 144917](https://mempool.space/block/00000000000007fe3e6060ec0c6ddb6790c77a8dc06eea4575a2408eebbf07d0).
