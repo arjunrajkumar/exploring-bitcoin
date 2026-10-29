@@ -19,6 +19,7 @@ BLOCK_POLL_INTERVAL_SECONDS = 2  # Pause between checks of local block data.
 # Path.home() gives the home folder of the user running the program.
 # The / operator joins Path objects and folder names.
 COOKIE_PATH = Path.home() / "Library/Application Support/Bitcoin/.cookie"
+TRANSACTION_CACHE_DIR = Path(__file__).resolve().parent / "data" / "transactions"
 
 
 class BitcoinRPCError(RuntimeError):
@@ -196,6 +197,25 @@ def get_raw_block(
     return result
 
 
+def load_transaction_hex(transaction_id: str) -> Optional[str]:
+    """Read a saved transaction, or return None if its file does not exist."""
+    transaction_path = TRANSACTION_CACHE_DIR / f"{transaction_id}.hex"
+    try:
+        return transaction_path.read_text(encoding="ascii").strip()
+    except FileNotFoundError:
+        return None
+
+
+def save_transaction_hex(transaction_id: str, transaction_hex: str) -> Path:
+    """Save transaction hex and return the file path."""
+    TRANSACTION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    transaction_path = TRANSACTION_CACHE_DIR / f"{transaction_id}.hex"
+    temporary_path = transaction_path.with_suffix(".hex.tmp")
+    temporary_path.write_text(transaction_hex + "\n", encoding="ascii")
+    temporary_path.replace(transaction_path)
+    return transaction_path
+
+
 def get_raw_transaction(transaction_id: str, block_hash: str) -> str:
     """Return a transaction as hex text from a block stored on our node."""
     request_body = build_request_body(
@@ -218,6 +238,21 @@ def decode_raw_transaction(transaction_hex: str) -> dict[str, Any]:
     if not isinstance(result, dict):
         raise RuntimeError("Bitcoin Core did not return a decoded transaction object.")
     return result
+
+
+def get_input_references(
+    decoded_transaction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Return each input's previous transaction ID and output index, in order."""
+    input_references = []
+    for transaction_input in decoded_transaction["vin"]:
+        if "txid" not in transaction_input or "vout" not in transaction_input:
+            raise RuntimeError("An input does not reference a previous output.")
+        input_references.append({
+            "txid": transaction_input["txid"],
+            "vout": transaction_input["vout"],
+        })
+    return input_references
 
 
 def request_block_from_peer(
@@ -295,25 +330,35 @@ def main() -> int:
         "29a3efd3ef04f9153d47a990bd7b048a4b2d213daaa5fb8ed670fb85f13bdbcf"
     )
     try:
-        block_hash = get_block_hash(block_height)
-        block_hex = get_raw_block(block_hash)
-        print(f"\nBlock hash at height {block_height}: {block_hash}")
-        if block_hex is None:
-            peers = get_peer_info()
-            selected_peer = find_network_peer(peers)
-            if selected_peer is None:
-                print("No connected peer lists NETWORK.", file=sys.stderr)
-                return 1
-            print("\nSelected peer:")
-            print(json.dumps(selected_peer, indent=2))
-            print(
-                f"\nChecking for the block for up to {BLOCK_WAIT_TIMEOUT_SECONDS} seconds."
-                f" If missing, requesting it from peer {selected_peer['id']}.",
-                flush=True,
-            )
-            block_hex = fetch_block_from_peer(block_hash, selected_peer["id"])
-        transaction_hex = get_raw_transaction(transaction_id, block_hash)
+        transaction_hex = load_transaction_hex(transaction_id)
+        if transaction_hex is None:
+            block_hash = get_block_hash(block_height)
+            block_hex = get_raw_block(block_hash)
+            print(f"\nBlock hash at height {block_height}: {block_hash}")
+            if block_hex is None:
+                peers = get_peer_info()
+                selected_peer = find_network_peer(peers)
+                if selected_peer is None:
+                    print("No connected peer lists NETWORK.", file=sys.stderr)
+                    return 1
+                print("\nSelected peer:")
+                print(json.dumps(selected_peer, indent=2))
+                print(
+                    f"\nChecking for the block for up to {BLOCK_WAIT_TIMEOUT_SECONDS} seconds."
+                    f" If missing, requesting it from peer {selected_peer['id']}.",
+                    flush=True,
+                )
+                block_hex = fetch_block_from_peer(block_hash, selected_peer["id"])
+            print(f"\nBlock available locally ({len(block_hex) // 2} bytes).")
+            transaction_hex = get_raw_transaction(transaction_id, block_hash)
+            saved_path = save_transaction_hex(transaction_id, transaction_hex)
+            print(f"\nSaved transaction to {saved_path}")
+        else:
+            print("\nUsing saved transaction hex.")
         decoded_transaction = decode_raw_transaction(transaction_hex)
+        if decoded_transaction.get("txid") != transaction_id:
+            raise RuntimeError("Decoded transaction ID does not match the requested ID.")
+        input_references = get_input_references(decoded_transaction)
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -326,9 +371,8 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"\nBlock available locally ({len(block_hex) // 2} bytes).")
-    print(f"\nDecoded transaction {transaction_id}:")
-    print(json.dumps(decoded_transaction, indent=2))
+    print(f"\nInput references for transaction {transaction_id}:")
+    print(json.dumps(input_references, indent=2))
     return 0
 
 
