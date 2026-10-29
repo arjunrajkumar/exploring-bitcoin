@@ -19,7 +19,10 @@ BLOCK_POLL_INTERVAL_SECONDS = 2  # Pause between checks of local block data.
 # Path.home() gives the home folder of the user running the program.
 # The / operator joins Path objects and folder names.
 COOKIE_PATH = Path.home() / "Library/Application Support/Bitcoin/.cookie"
-TRANSACTION_CACHE_DIR = Path(__file__).resolve().parent / "data" / "transactions"
+DATA_DIR = Path(__file__).resolve().parent / "data"
+TRANSACTION_CACHE_DIR = DATA_DIR / "transactions"
+BLOCK_CACHE_DIR = DATA_DIR / "blocks"
+INPUT_REFERENCES_PATH = DATA_DIR / "input_references.json"
 
 
 class BitcoinRPCError(RuntimeError):
@@ -255,6 +258,54 @@ def get_input_references(
     return input_references
 
 
+def load_input_references(path: Path = INPUT_REFERENCES_PATH) -> list[dict[str, Any]]:
+    """Read the saved input references and their block hashes."""
+    try:
+        references = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Input references file not found: {path}") from error
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Input references file contains invalid JSON: {path}"
+        ) from error
+
+    if not isinstance(references, list):
+        raise RuntimeError("Expected a list of input references.")
+    for reference in references:
+        if (
+            not isinstance(reference, dict)
+            or not {"txid", "vout", "block_hash"} <= reference.keys()
+        ):
+            raise RuntimeError("Each input reference needs txid, vout, and block_hash.")
+        block_hash = reference["block_hash"]
+        if (
+            not isinstance(block_hash, str)
+            or len(block_hash) != 64
+            or any(character not in "0123456789abcdef" for character in block_hash)
+        ):
+            raise RuntimeError("Each block hash must contain 64 lowercase hex characters.")
+    return references
+
+
+def load_block_hex(block_hash: str) -> Optional[str]:
+    """Read a saved block, or return None if its file does not exist."""
+    block_path = BLOCK_CACHE_DIR / f"{block_hash}.hex"
+    try:
+        return block_path.read_text(encoding="ascii").strip()
+    except FileNotFoundError:
+        return None
+
+
+def save_block_hex(block_hash: str, block_hex: str) -> Path:
+    """Save block hex and return the file path."""
+    BLOCK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    block_path = BLOCK_CACHE_DIR / f"{block_hash}.hex"
+    temporary_path = block_path.with_suffix(".hex.tmp")
+    temporary_path.write_text(block_hex + "\n", encoding="ascii")
+    temporary_path.replace(block_path)
+    return block_path
+
+
 def request_block_from_peer(
     block_hash: str, peer_id: int, timeout_seconds: float = RPC_TIMEOUT_SECONDS
 ) -> None:
@@ -321,6 +372,41 @@ def fetch_block_from_peer(
         time.sleep(min(poll_interval_seconds, remaining))
 
 
+def fetch_input_blocks(
+    input_references: list[dict[str, Any]],
+    timeout_seconds: float = BLOCK_WAIT_TIMEOUT_SECONDS,
+) -> dict[str, Path]:
+    """Fetch and save each distinct referenced block, then return its file path."""
+    saved_blocks = {}
+    for reference in input_references:
+        block_hash = reference["block_hash"]
+        if block_hash in saved_blocks:
+            continue
+
+        block_path = BLOCK_CACHE_DIR / f"{block_hash}.hex"
+        if load_block_hex(block_hash) is not None:
+            saved_blocks[block_hash] = block_path
+            continue
+
+        block_hex = get_raw_block(block_hash)
+        if block_hex is None:
+            peer = find_network_peer(get_peer_info())
+            if peer is None:
+                raise RuntimeError(f"No connected NETWORK peer for block {block_hash}.")
+            try:
+                block_hex = fetch_block_from_peer(
+                    block_hash, peer["id"], timeout_seconds=timeout_seconds
+                )
+            except (OSError, HTTPException, RuntimeError) as error:
+                raise RuntimeError(
+                    f"Could not fetch block {block_hash} from peer {peer['id']}: {error}"
+                ) from error
+
+        # Save immediately. A later block may fail or Core may prune this block.
+        saved_blocks[block_hash] = save_block_hex(block_hash, block_hex)
+    return saved_blocks
+
+
 def main() -> int:
     """Print the result or an error, and return a command exit code."""
     # Only main() handles terminal output and the command's exit status.
@@ -359,6 +445,22 @@ def main() -> int:
         if decoded_transaction.get("txid") != transaction_id:
             raise RuntimeError("Decoded transaction ID does not match the requested ID.")
         input_references = get_input_references(decoded_transaction)
+        saved_references = load_input_references()
+        if input_references != [
+            {"txid": reference["txid"], "vout": reference["vout"]}
+            for reference in saved_references
+        ]:
+            raise RuntimeError("Saved input references do not match the chosen transaction.")
+
+        print(f"\nInput references for transaction {transaction_id}:")
+        print(json.dumps(saved_references, indent=2))
+        block_count = len({reference["block_hash"] for reference in saved_references})
+        print(
+            f"\nChecking {block_count} distinct blocks. Saved blocks will be reused."
+            f" Peer wait limit: {BLOCK_WAIT_TIMEOUT_SECONDS} seconds per missing block.",
+            flush=True,
+        )
+        saved_blocks = fetch_input_blocks(saved_references)
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -371,8 +473,8 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"\nInput references for transaction {transaction_id}:")
-    print(json.dumps(input_references, indent=2))
+    for block_hash, block_path in saved_blocks.items():
+        print(f"\nBlock {block_hash} is saved at {block_path}")
     return 0
 
 
