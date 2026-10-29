@@ -10,7 +10,8 @@ Run from the repository root
 ----------------------------
 python3 projects/transaction-signature-verification/get_blockchain_info.py
 
-The program prints the hash for block height 153509, then the connected peers.
+The program prints the hash for block height 153509, then a selected peer.
+It selects the first connected peer whose servicesnames list contains NETWORK.
 
 File structure
 --------------
@@ -18,7 +19,9 @@ This is one small program, so its functions stay in one file.
 Read main() first to see the entry point.
 Then follow get_block_hash() and get_peer_info().
 Both functions use the same helpers to build and send a request.
-Each function has one purpose: login, request, response, API call, or output.
+Then find_network_peer() selects a peer from the returned list.
+Each function has one purpose: login, request, response, API call, selection,
+or output.
 Function names use snake_case. Constants use UPPER_CASE.
 The type hints describe the expected arguments and return values.
 For example, -> bytes means that a function returns bytes.
@@ -37,7 +40,7 @@ import json  # Convert between Python objects and JSON text.
 import sys  # Print errors to stderr, the terminal's error output.
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path  # Build paths and read files.
-from typing import Any  # A JSON result can contain several value types.
+from typing import Any, Optional  # Optional allows a return value of None.
 
 
 # These are default connection settings, not credentials.
@@ -175,6 +178,18 @@ def get_peer_info() -> list[dict[str, Any]]:
     return result
 
 
+def find_network_peer(peers: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Return the first peer that lists NETWORK, or None if no peer matches."""
+    for peer in peers:
+        # in checks for an exact list value. NETWORK_LIMITED alone will not match.
+        # get() uses an empty list if the servicesnames key is absent.
+        if "NETWORK" in peer.get("servicesnames", []):
+            return peer
+
+    # None means no match. It is similar to nil in Ruby.
+    return None
+
+
 def main() -> int:
     """Print the result or an error, and return a command exit code."""
     # Only main() handles terminal output and the command's exit status.
@@ -196,8 +211,12 @@ def main() -> int:
         )
         return 1
     print(f"\nBlock hash at height {block_height}: {block_hash}")
-    print("\nConnected peers:")
-    print(json.dumps(peers, indent=2))
+    selected_peer = find_network_peer(peers)
+    if selected_peer is None:
+        print("No connected peer lists NETWORK.", file=sys.stderr)
+        return 1
+    print("\nSelected peer:")
+    print(json.dumps(selected_peer, indent=2))
     return 0
 
 
