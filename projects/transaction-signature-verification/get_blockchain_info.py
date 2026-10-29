@@ -1,43 +1,8 @@
-"""Before running
---------------
-1. Bitcoin Core must be running on this computer.
-2. This example uses its default macOS data directory.
-3. It uses the default mainnet command port, 8332.
-4. It uses the temporary login file that Bitcoin Core creates.
-5. Use Python 3.9 or newer. No package install is needed.
-
-Run from the repository root
-----------------------------
-python3 projects/transaction-signature-verification/get_blockchain_info.py
-
-The program prints the hash for block height 153509, then a selected peer.
-It selects the first connected peer whose servicesnames list contains NETWORK.
-
-File structure
---------------
-This is one small program, so its functions stay in one file.
-Read main() first to see the entry point.
-Then follow get_block_hash() and get_peer_info().
-Both functions use the same helpers to build and send a request.
-Then find_network_peer() selects a peer from the returned list.
-Each function has one purpose: login, request, response, API call, selection,
-or output.
-Function names use snake_case. Constants use UPPER_CASE.
-The type hints describe the expected arguments and return values.
-For example, -> bytes means that a function returns bytes.
-
-References
-----------
-Block hash: https://bitcoincore.org/en/doc/24.0.0/rpc/blockchain/getblockhash/
-Peer info: https://bitcoincore.org/en/doc/24.0.0/rpc/network/getpeerinfo/
-Python style: https://peps.python.org/pep-0008/
-Entry point: https://docs.python.org/3/library/__main__.html
-"""
-
 # All imports below come from Python's standard library.
 import base64  # Encode the login as text for HTTP Basic authentication.
 import json  # Convert between Python objects and JSON text.
 import sys  # Print errors to stderr, the terminal's error output.
+import time  # Measure elapsed time and pause between checks.
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path  # Build paths and read files.
 from typing import Any, Optional  # Optional allows a return value of None.
@@ -48,10 +13,21 @@ from typing import Any, Optional  # Optional allows a return value of None.
 RPC_HOST = "127.0.0.1"  # This computer.
 RPC_PORT = 8332  # Mainnet API port. Peer traffic uses a different port.
 RPC_TIMEOUT_SECONDS = 30  # Limit socket waits.
+BLOCK_WAIT_TIMEOUT_SECONDS = 60  # Limit the block request and checking loop.
+BLOCK_POLL_INTERVAL_SECONDS = 2  # Pause between checks of local block data.
 
 # Path.home() gives the home folder of the user running the program.
 # The / operator joins Path objects and folder names.
 COOKIE_PATH = Path.home() / "Library/Application Support/Bitcoin/.cookie"
+
+
+class BitcoinRPCError(RuntimeError):
+    """Keep the API error code and message so callers can handle known errors."""
+
+    def __init__(self, code: int, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"Bitcoin Core API error {code}: {message}")
 
 
 def read_authorization_header(cookie_path: Path) -> str:
@@ -111,6 +87,12 @@ def parse_rpc_response(status: int, body: bytes) -> Any:
     # Read its details before checking the remaining HTTP status.
     error = reply.get("error")
     if error is not None:
+        if (
+            isinstance(error, dict)
+            and isinstance(error.get("code"), int)
+            and isinstance(error.get("message"), str)
+        ):
+            raise BitcoinRPCError(error["code"], error["message"])
         raise RuntimeError(f"Bitcoin Core API error: {error}")
     if status != 200:
         raise RuntimeError(f"Bitcoin Core returned HTTP {status}.")
@@ -122,11 +104,13 @@ def parse_rpc_response(status: int, body: bytes) -> Any:
     return reply["result"]
 
 
-def send_request(request_body: bytes) -> Any:
+def send_request(
+    request_body: bytes, timeout_seconds: float = RPC_TIMEOUT_SECONDS
+) -> Any:
     """Send a prepared request to the local node and return its result."""
     authorization = read_authorization_header(COOKIE_PATH)
     connection = HTTPConnection(
-        RPC_HOST, RPC_PORT, timeout=RPC_TIMEOUT_SECONDS
+        RPC_HOST, RPC_PORT, timeout=timeout_seconds
     )
 
     # The network connection starts when request() runs.
@@ -190,6 +174,94 @@ def find_network_peer(peers: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     return None
 
 
+def get_raw_block(
+    block_hash: str, timeout_seconds: float = RPC_TIMEOUT_SECONDS
+) -> Optional[str]:
+    """Return the local block as hex text, or None if its data is unavailable."""
+    # 0 asks for the complete block as hex, without decoding its transactions.
+    request_body = build_request_body(method="getblock", params=[block_hash, 0])
+    try:
+        result = send_request(request_body, timeout_seconds=timeout_seconds)
+    except BitcoinRPCError as error:
+        # Core 24 uses -1 for these missing-data errors. Other errors must stop us.
+        if error.code == -1 and error.message in (
+            "Block not available (pruned data)",
+            "Block not found on disk",
+        ):
+            return None
+        raise
+
+    if not isinstance(result, str):
+        raise RuntimeError("Bitcoin Core did not return raw block hex text.")
+    return result
+
+
+def request_block_from_peer(
+    block_hash: str, peer_id: int, timeout_seconds: float = RPC_TIMEOUT_SECONDS
+) -> None:
+    """Ask our node to fetch this block from the selected peer."""
+    request_body = build_request_body(
+        method="getblockfrompeer", params=[block_hash, peer_id]
+    )
+    try:
+        result = send_request(request_body, timeout_seconds=timeout_seconds)
+    except BitcoinRPCError as error:
+        # A previous run may already have requested it, or it may have just arrived.
+        # In either case, we still check local storage for the actual block.
+        if error.code == -1 and error.message in (
+            "Already requested from this peer",
+            "Block already downloaded",
+        ):
+            return
+        raise
+
+    # {} means the request was scheduled. It does not confirm receipt of the block.
+    if result != {}:
+        raise RuntimeError("Bitcoin Core returned an unexpected block request result.")
+
+
+def remaining_block_wait_seconds(deadline: float) -> float:
+    """Return the remaining wait time, or stop when the deadline is reached."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Time limit reached while waiting for the block.")
+    return remaining
+
+
+def fetch_block_from_peer(
+    block_hash: str,
+    peer_id: int,
+    timeout_seconds: float = BLOCK_WAIT_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = BLOCK_POLL_INTERVAL_SECONDS,
+) -> str:
+    """Request a missing block once, then wait for its local hex data."""
+    if timeout_seconds <= 0 or poll_interval_seconds <= 0:
+        raise ValueError("The timeout and check interval must be positive.")
+
+    # monotonic() measures elapsed time without changes to the computer's clock.
+    deadline = time.monotonic() + timeout_seconds
+    requested = False
+    while True:
+        remaining = remaining_block_wait_seconds(deadline)
+        block_hex = get_raw_block(
+            block_hash, timeout_seconds=min(RPC_TIMEOUT_SECONDS, remaining)
+        )
+        remaining_block_wait_seconds(deadline)
+        if block_hex is not None:
+            return block_hex
+
+        if not requested:
+            remaining = remaining_block_wait_seconds(deadline)
+            request_block_from_peer(
+                block_hash, peer_id,
+                timeout_seconds=min(RPC_TIMEOUT_SECONDS, remaining),
+            )
+            requested = True
+
+        remaining = remaining_block_wait_seconds(deadline)
+        time.sleep(min(poll_interval_seconds, remaining))
+
+
 def main() -> int:
     """Print the result or an error, and return a command exit code."""
     # Only main() handles terminal output and the command's exit status.
@@ -197,7 +269,22 @@ def main() -> int:
     block_height = 153509
     try:
         block_hash = get_block_hash(block_height)
-        peers = get_peer_info()
+        block_hex = get_raw_block(block_hash)
+        print(f"\nBlock hash at height {block_height}: {block_hash}")
+        if block_hex is None:
+            peers = get_peer_info()
+            selected_peer = find_network_peer(peers)
+            if selected_peer is None:
+                print("No connected peer lists NETWORK.", file=sys.stderr)
+                return 1
+            print("\nSelected peer:")
+            print(json.dumps(selected_peer, indent=2))
+            print(
+                f"\nChecking for the block for up to {BLOCK_WAIT_TIMEOUT_SECONDS} seconds."
+                f" If missing, requesting it from peer {selected_peer['id']}.",
+                flush=True,
+            )
+            block_hex = fetch_block_from_peer(block_hash, selected_peer["id"])
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -210,13 +297,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"\nBlock hash at height {block_height}: {block_hash}")
-    selected_peer = find_network_peer(peers)
-    if selected_peer is None:
-        print("No connected peer lists NETWORK.", file=sys.stderr)
-        return 1
-    print("\nSelected peer:")
-    print(json.dumps(selected_peer, indent=2))
+    print(f"\nBlock available locally ({len(block_hex) // 2} bytes).")
+    print("\nRaw block (hex text):")
+    print(block_hex)
     return 0
 
 
