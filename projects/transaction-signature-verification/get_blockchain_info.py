@@ -10,11 +10,14 @@ Run from the repository root
 ----------------------------
 python3 projects/transaction-signature-verification/get_blockchain_info.py
 
+The program prints the node status, then the hash for block height 153509.
+
 File structure
 --------------
 This is one small program, so its functions stay in one file.
 Read main() first to see the entry point.
-Then follow get_blockchain_info() and the helper functions it calls.
+Then follow get_blockchain_info() and get_block_hash().
+Both functions use the same helpers to build and send a request.
 Each function has one purpose: login, request, response, API call, or output.
 Function names use snake_case. Constants use UPPER_CASE.
 The type hints describe the expected arguments and return values.
@@ -23,6 +26,7 @@ For example, -> bytes means that a function returns bytes.
 References
 ----------
 API: https://bitcoincore.org/en/doc/24.0.0/rpc/blockchain/getblockchaininfo/
+Block hash: https://bitcoincore.org/en/doc/24.0.0/rpc/blockchain/getblockhash/
 Python style: https://peps.python.org/pep-0008/
 Entry point: https://docs.python.org/3/library/__main__.html
 """
@@ -82,7 +86,7 @@ def build_request_body(method: str, params: list[Any]) -> bytes:
     return json.dumps(request).encode("utf-8")
 
 
-def parse_rpc_response(status: int, body: bytes) -> dict[str, Any]:
+def parse_rpc_response(status: int, body: bytes) -> Any:
     """Return the API result, or raise an error describing the failure."""
     # HTTP 401 means authentication failed. HTTP 403 means access was refused.
     if status in (401, 403):
@@ -108,20 +112,16 @@ def parse_rpc_response(status: int, body: bytes) -> dict[str, Any]:
     if status != 200:
         raise RuntimeError(f"Bitcoin Core returned HTTP {status}.")
 
-    # A successful getblockchaininfo result must be a dictionary.
-    result = reply.get("result")
-    if not isinstance(result, dict):
-        raise RuntimeError(
-            "Bitcoin Core did not return blockchain information."
-        )
-    return result
+    # The result type depends on the command we called.
+    # Each command's function checks that type after this step.
+    if "result" not in reply:
+        raise RuntimeError("Bitcoin Core did not return a result.")
+    return reply["result"]
 
 
-def get_blockchain_info() -> dict[str, Any]:
-    """Request blockchain information from the local node."""
+def send_request(request_body: bytes) -> Any:
+    """Send a prepared request to the local node and return its result."""
     authorization = read_authorization_header(COOKIE_PATH)
-    # This function chooses the command. getblockchaininfo takes no arguments.
-    request_body = build_request_body(method="getblockchaininfo", params=[])
     connection = HTTPConnection(
         RPC_HOST, RPC_PORT, timeout=RPC_TIMEOUT_SECONDS
     )
@@ -147,13 +147,25 @@ def get_blockchain_info() -> dict[str, Any]:
         # Close the connection on success and on failure.
         connection.close()
 
+def get_block_hash(block_height: int) -> str:
+    """Return the block hash at the given height in the node's active chain."""
+    # The height is an integer. JSON sends it as a number, without quotes.
+    request_body = build_request_body(method="getblockhash", params=[block_height])
+    result = send_request(request_body)
+
+    # getblockhash returns a string, unlike getblockchaininfo's dictionary.
+    if not isinstance(result, str):
+        raise RuntimeError("Bitcoin Core did not return a block hash.")
+    return result
+
 
 def main() -> int:
     """Print the result or an error, and return a command exit code."""
     # Only main() handles terminal output and the command's exit status.
     # Helper functions return data or raise errors for main() to handle.
+    block_height = 153509
     try:
-        info = get_blockchain_info()
+        block_hash = get_block_hash(block_height)
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -162,13 +174,11 @@ def main() -> int:
         return 1
     except (OSError, HTTPException, RuntimeError) as error:
         print(
-            f"Could not get blockchain information: {error}",
+            f"Bitcoin Core request failed: {error}",
             file=sys.stderr,
         )
         return 1
-
-    # indent=2 makes the JSON output easier to read.
-    print(json.dumps(info, indent=2))
+    print(f"\nBlock hash at height {block_height}: {block_hash}")
     return 0
 
 
