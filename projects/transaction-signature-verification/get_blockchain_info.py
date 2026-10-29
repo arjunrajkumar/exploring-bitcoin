@@ -10,13 +10,13 @@ Run from the repository root
 ----------------------------
 python3 projects/transaction-signature-verification/get_blockchain_info.py
 
-The program prints the node status, then the hash for block height 153509.
+The program prints the hash for block height 153509, then the connected peers.
 
 File structure
 --------------
 This is one small program, so its functions stay in one file.
 Read main() first to see the entry point.
-Then follow get_blockchain_info() and get_block_hash().
+Then follow get_block_hash() and get_peer_info().
 Both functions use the same helpers to build and send a request.
 Each function has one purpose: login, request, response, API call, or output.
 Function names use snake_case. Constants use UPPER_CASE.
@@ -25,8 +25,8 @@ For example, -> bytes means that a function returns bytes.
 
 References
 ----------
-API: https://bitcoincore.org/en/doc/24.0.0/rpc/blockchain/getblockchaininfo/
 Block hash: https://bitcoincore.org/en/doc/24.0.0/rpc/blockchain/getblockhash/
+Peer info: https://bitcoincore.org/en/doc/24.0.0/rpc/network/getpeerinfo/
 Python style: https://peps.python.org/pep-0008/
 Entry point: https://docs.python.org/3/library/__main__.html
 """
@@ -147,6 +147,7 @@ def send_request(request_body: bytes) -> Any:
         # Close the connection on success and on failure.
         connection.close()
 
+
 def get_block_hash(block_height: int) -> str:
     """Return the block hash at the given height in the node's active chain."""
     # The height is an integer. JSON sends it as a number, without quotes.
@@ -159,6 +160,21 @@ def get_block_hash(block_height: int) -> str:
     return result
 
 
+def get_peer_info() -> list[dict[str, Any]]:
+    """Return information about peers connected to our node."""
+    # getpeerinfo needs no arguments, so params is an empty list.
+    request_body = build_request_body(method="getpeerinfo", params=[])
+    result = send_request(request_body)
+
+    # A JSON array becomes a Python list. Each peer is a dictionary.
+    # An empty list is valid: the node may have no connected peers.
+    if not isinstance(result, list) or not all(
+        isinstance(peer, dict) for peer in result
+    ):
+        raise RuntimeError("Bitcoin Core did not return a list of peer objects.")
+    return result
+
+
 def main() -> int:
     """Print the result or an error, and return a command exit code."""
     # Only main() handles terminal output and the command's exit status.
@@ -166,6 +182,7 @@ def main() -> int:
     block_height = 153509
     try:
         block_hash = get_block_hash(block_height)
+        peers = get_peer_info()
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -179,6 +196,8 @@ def main() -> int:
         )
         return 1
     print(f"\nBlock hash at height {block_height}: {block_hash}")
+    print("\nConnected peers:")
+    print(json.dumps(peers, indent=2))
     return 0
 
 
