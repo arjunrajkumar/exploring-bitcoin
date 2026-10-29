@@ -196,6 +196,18 @@ def get_raw_block(
     return result
 
 
+def get_raw_transaction(transaction_id: str, block_hash: str) -> str:
+    """Return a transaction as hex text from a block stored on our node."""
+    request_body = build_request_body(
+        method="getrawtransaction", params=[transaction_id, False, block_hash]
+    )
+    result = send_request(request_body)
+
+    if not isinstance(result, str):
+        raise RuntimeError("Bitcoin Core did not return raw transaction hex text.")
+    return result
+
+
 def request_block_from_peer(
     block_hash: str, peer_id: int, timeout_seconds: float = RPC_TIMEOUT_SECONDS
 ) -> None:
@@ -267,6 +279,9 @@ def main() -> int:
     # Only main() handles terminal output and the command's exit status.
     # Helper functions return data or raise errors for main() to handle.
     block_height = 153509
+    transaction_id = (
+        "29a3efd3ef04f9153d47a990bd7b048a4b2d213daaa5fb8ed670fb85f13bdbcf"
+    )
     try:
         block_hash = get_block_hash(block_height)
         block_hex = get_raw_block(block_hash)
@@ -285,6 +300,7 @@ def main() -> int:
                 flush=True,
             )
             block_hex = fetch_block_from_peer(block_hash, selected_peer["id"])
+        transaction_hex = get_raw_transaction(transaction_id, block_hash)
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -298,8 +314,8 @@ def main() -> int:
         )
         return 1
     print(f"\nBlock available locally ({len(block_hex) // 2} bytes).")
-    print("\nRaw block (hex text):")
-    print(block_hex)
+    print(f"\nRaw transaction {transaction_id} (hex text):")
+    print(transaction_hex)
     return 0
 
 
