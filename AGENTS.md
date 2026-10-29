@@ -66,6 +66,7 @@ Do not restore the retired Weightless material or its deleted repository.
 
 ## Where work belongs
 
+- `projects/`: independent Bitcoin projects, with one folder for each project.
 - `mastering-bitcoin/`: all Mastering Bitcoin notes, exercises and earlier work.
 - `mit-cryptocurrency-engineering-and-design/`: MIT lecture notes, problem sets and experiments.
 - `bitshala-programming-bitcoin/`: Programming Bitcoin notes and exercises.
