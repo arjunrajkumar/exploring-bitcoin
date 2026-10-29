@@ -208,6 +208,18 @@ def get_raw_transaction(transaction_id: str, block_hash: str) -> str:
     return result
 
 
+def decode_raw_transaction(transaction_hex: str) -> dict[str, Any]:
+    """Return the decoded transaction fields from Bitcoin Core."""
+    request_body = build_request_body(
+        method="decoderawtransaction", params=[transaction_hex]
+    )
+    result = send_request(request_body)
+
+    if not isinstance(result, dict):
+        raise RuntimeError("Bitcoin Core did not return a decoded transaction object.")
+    return result
+
+
 def request_block_from_peer(
     block_hash: str, peer_id: int, timeout_seconds: float = RPC_TIMEOUT_SECONDS
 ) -> None:
@@ -301,6 +313,7 @@ def main() -> int:
             )
             block_hex = fetch_block_from_peer(block_hash, selected_peer["id"])
         transaction_hex = get_raw_transaction(transaction_id, block_hash)
+        decoded_transaction = decode_raw_transaction(transaction_hex)
     except FileNotFoundError:
         print(
             "Login file not found. Check that Bitcoin Core is running.",
@@ -314,8 +327,8 @@ def main() -> int:
         )
         return 1
     print(f"\nBlock available locally ({len(block_hex) // 2} bytes).")
-    print(f"\nRaw transaction {transaction_id} (hex text):")
-    print(transaction_hex)
+    print(f"\nDecoded transaction {transaction_id}:")
+    print(json.dumps(decoded_transaction, indent=2))
     return 0
 
 
