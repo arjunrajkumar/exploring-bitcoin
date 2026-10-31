@@ -1,4 +1,5 @@
 data/transactions/*
 !data/transactions/29a3efd3ef04f9153d47a990bd7b048a4b2d213daaa5fb8ed670fb85f13bdbcf.hex
+!data/transactions/3fd4cb75e272a5e68524d15df2d16a7b926d4998c2f1bc60a6f76083eeaba404.hex
 data/blocks/*
 !data/blocks/00000000000000fb62bbadc0a9dcda556925b2d0c1ad8634253ac2e83ab8382f.hex
