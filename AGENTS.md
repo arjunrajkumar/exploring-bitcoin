@@ -64,6 +64,28 @@ Do not restore the retired Weightless material or its deleted repository.
 - Report the next useful action when relevant.
   State whether changes are local, committed or pushed.
 
+## Start the Jupyter and Quarto workspace
+
+- When Arjun says `start` for the notebook/blog workspace, set up and open that
+  workspace yourself. If he says only `start` and no other task is specified,
+  use this notebook startup workflow. Do not stop after providing commands.
+- The blog is a separate repository: `arjunrajkumar/arjunrajkumar.github.io`.
+  Look first for a sibling checkout named `arjunrajkumar.github.io`.
+  If missing, clone `https://github.com/arjunrajkumar/arjunrajkumar.github.io.git`
+  beside this repository. Do not assume a path from another computer.
+- Read that repository's `AGENTS.md` and follow its setup and startup workflow.
+  It covers Python 3.13, the local environment, JupyterLab, nbdime, Quarto,
+  server reuse, and authenticated browser access.
+- The current default problem notebook is
+  `notebooks/verifying-bitcoin-transaction-signature/index.ipynb` in the blog repository.
+  Use another notebook when the user names it.
+- Finish with the notebook open in the browser and both local servers running.
+  Do not run exercise code, alter learner answers, or publish changes during startup.
+- This startup request authorizes running setup and server commands.
+  If Arjun asks to learn or run the commands himself, guide him one step at a time.
+- Keep setup separate from the daily learning review. Do not block opening the
+  notebook on review questions.
+
 ## Where work belongs
 
 - `projects/`: independent Bitcoin projects, with one folder for each project.
