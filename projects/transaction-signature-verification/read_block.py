@@ -1,5 +1,6 @@
 from get_blockchain_info import load_block_hex, load_input_references
 from decimal import Decimal
+from hashlib import sha256
 
 def load_block_bytes(block_hash: str) -> bytes:
     """Read a saved block's hex text and convert it to bytes."""
@@ -94,7 +95,7 @@ if __name__ == "__main__":
         position += block_txn_count_field_size
         print(f"position: {position}")
 
-        print(f"Transactions:")
+        print(f"Coinbase transaction:")
         first_transaction_start = position
         txn_version_size = 4
         print(f"Transaction version bytes: {txn_version_size}")
@@ -108,7 +109,6 @@ if __name__ == "__main__":
         position += txn_input_count_field_size
         print(f"position: {position}")
 
-        # coinbase
         previous_output_hash_size = 32
         previous_output_index_size = 4
         print(f"previous_output_hash_size: {previous_output_hash_size}")
@@ -166,3 +166,84 @@ if __name__ == "__main__":
         print(f"lock_time size: {lock_time_size}")
         position += lock_time_size
         print(f"position: {position}")
+
+        print(f"Second transaction:")
+        second_transaction_start = position
+        txn_version_size = 4
+        print(f"Transaction version bytes: {txn_version_size}")
+        position += txn_version_size
+        print(f"position: {position}")
+
+        txn_input_count, txn_input_count_field_size = read_compact_size(position, block_bytes)
+        txn_input_count_bytes = block_bytes[position:position + txn_input_count_field_size]
+        print(f"Transaction txn_input_count: {txn_input_count}")
+        print(f"Transaction txn_input_count_field_size: {txn_input_count_field_size}")
+        position += txn_input_count_field_size
+        print(f"position: {position}")
+
+        print(f"Going thru all {txn_input_count} inputs")
+        for input_index in range(txn_input_count):
+            previous_output_hash_size = 32
+            previous_output_index_size = 4
+            print(f"previous_output_hash_size: {previous_output_hash_size}")
+            position += previous_output_hash_size
+            print(f"position: {position}")
+            print(f"previous_output_index_size: {previous_output_index_size}")
+            position += previous_output_index_size
+            print(f"position: {position}")
+
+            script_length, script_length_field_size = read_compact_size(position, block_bytes)
+            print(f"script length field size: {script_length_field_size}")
+            position += script_length_field_size
+            print(f"position: {position}")
+            print(f"script length: {script_length}")
+            position += script_length
+            print(f"position: {position}")
+
+            sequence_size = 4
+            print(f"sequence: {sequence_size}")
+            position += sequence_size
+            print(f"position: {position}")
+
+        txn_output_count, txn_output_count_field_size = read_compact_size(position, block_bytes)
+        txn_output_count_bytes = block_bytes[position:position + txn_output_count_field_size]
+        print(f"Transaction txn_output_count: {txn_output_count}")
+        print(f"Transaction txn_output_count_field_size: {txn_output_count_field_size}")
+        position += txn_output_count_field_size
+        print(f"position: {position}")
+
+        print(f"Going thru all {txn_output_count} outputs")
+        for output_index in range(txn_output_count):
+            txn_output_value_size = 8
+            txn_output_value_bytes = block_bytes[position:position + txn_output_value_size]
+            txn_output_value_amount = int.from_bytes(
+                txn_output_value_bytes,
+                byteorder="little",
+                signed=True,
+            )
+            txn_output_value_btc = Decimal(txn_output_value_amount) / Decimal(100_000_000)
+            print(f"Txn Output value size: {txn_output_value_size}")
+            print(f"Txn Output value bytes: {txn_output_value_bytes}")
+            print(f"Txn Output value amount in satoshis: {txn_output_value_amount}")
+            print(f"Txn Output value amount in bitcoin: {txn_output_value_btc}")
+            position += txn_output_value_size
+            print(f"position: {position}")
+
+            txn_output_pk_script_length, txn_output_pk_script_length_field_size = read_compact_size(position, block_bytes)
+            print(f"txn_output_pk_script_length_field_size: {txn_output_pk_script_length_field_size}")
+            position += txn_output_pk_script_length_field_size
+            print(f"position: {position}")
+            print(f"txn_output_pk_script_length: {txn_output_pk_script_length}")
+            position += txn_output_pk_script_length
+            print(f"position: {position}")
+
+        lock_time_size = 4
+        print(f"lock_time size: {lock_time_size}")
+        position += lock_time_size
+        print(f"position: {position}")
+
+        second_txn_bytes = block_bytes[second_transaction_start:position]
+        first_hash = sha256(second_txn_bytes).digest()
+        second_hash = sha256(first_hash).digest()
+        second_txn_id = second_hash[::-1].hex()
+        print(f"Second transaction ID: {second_txn_id}")
