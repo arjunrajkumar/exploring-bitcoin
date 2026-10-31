@@ -108,6 +108,7 @@ if __name__ == "__main__":
         position += txn_input_count_field_size
         print(f"position: {position}")
 
+        # coinbase
         previous_output_hash_size = 32
         previous_output_index_size = 4
         print(f"previous_output_hash_size: {previous_output_hash_size}")
@@ -151,3 +152,17 @@ if __name__ == "__main__":
         print(f"Txn Output value amount in satoshis: {txn_output_value_amount}")
         print(f"Txn Output value amount in bitcoin: {txn_output_value_btc}")
         position += txn_output_value_size
+        print(f"position: {position}")
+
+        txn_output_pk_script_length, txn_output_pk_script_length_field_size = read_compact_size(position, block_bytes)
+        print(f"txn_output_pk_script_length_field_size: {txn_output_pk_script_length_field_size}")
+        position += txn_output_pk_script_length_field_size
+        print(f"position: {position}")
+        print(f"txn_output_pk_script_length: {txn_output_pk_script_length}")
+        position += txn_output_pk_script_length
+        print(f"position: {position}")
+
+        lock_time_size = 4
+        print(f"lock_time size: {lock_time_size}")
+        position += lock_time_size
+        print(f"position: {position}")
