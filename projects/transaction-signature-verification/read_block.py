@@ -42,7 +42,7 @@ def read_compact_size(start: int, block_bytes: bytes) -> tuple[int, int]:
     """Return the transaction count and the total bytes used by its field."""
     min_limit = start + 1
     if len(block_bytes) < min_limit:
-        raise ValueError("Transaction count is missing after the block header.")
+        raise ValueError("Count is missing after the block header.")
 
     # Format: https://developer.bitcoin.org/reference/transactions.html#compactsize-unsigned-integers
     first_byte = block_bytes[start]
@@ -61,12 +61,12 @@ def read_compact_size(start: int, block_bytes: bytes) -> tuple[int, int]:
 
     end = start + bytes_count
     if len(block_bytes) < end:
-        raise ValueError("Transaction count bytes are incomplete.")
+        raise ValueError("Count bytes are incomplete.")
 
-    txn_count = int.from_bytes(block_bytes[min_limit:end], byteorder="little")
-    if txn_count < minimum_count:
-        raise ValueError("Transaction count uses more bytes than CompactSize permits.")
-    return txn_count, bytes_count
+    value = int.from_bytes(block_bytes[min_limit:end], byteorder="little")
+    if value < minimum_count:
+        raise ValueError("Count uses more bytes than CompactSize permits.")
+    return value, bytes_count
 
 
 if __name__ == "__main__":
@@ -75,37 +75,61 @@ if __name__ == "__main__":
     block_headers = {}
 
     for block_hash in sorted(block_hashes):
+        block_header_size = 80;
+        position = 0
+        print(f"position: {position}")
+        position += block_header_size
+
         block_bytes = load_block_bytes(block_hash)
-        txn_count, txn_count_bytes_count = read_compact_size(80, block_bytes)
-        txn_count_bytes = block_bytes[80:80 + txn_count_bytes_count]
-
-        start = 80 + txn_count_bytes_count;
-        version_bytes = block_bytes[start:start + 4]
-
-        transaction_input_count_start = start + 4;
-        txn_input_count, txn_input_count_bytes_count = read_compact_size(transaction_input_count_start, block_bytes)
-        txn_input_count_bytes = block_bytes[transaction_input_count_start:transaction_input_count_start + txn_input_count_bytes_count]
-
+        block_txn_count, block_txn_count_field_size = read_compact_size(position, block_bytes)
+        block_txn_count_bytes = block_bytes[block_header_size:block_header_size + block_txn_count_field_size]
         print(f"NEW Block--------------------------------------------------")
-        print(f"Block header:")
-        print(f"Block length: {block_hash}: {len(block_bytes)} bytes")
-        print(f"Block header in hex: {block_bytes[:80].hex(' ')}")
-        header_fields = parse_block_header(block_bytes)
-        block_headers[block_hash] = header_fields
-        for field in header_fields:
-            print(
-                f"{field['name']} ({field['bytes_count']} bytes): "
-                f"{field['bytes'].hex(' ')}"
-            )
-
-        print(f"Transaction count:")
-        print(f"txn_count compactSize uint as bytes: {txn_count_bytes}")
-        print(f"txn_count compactSize uint in hex: {txn_count_bytes.hex(' ')}")
-        print(f"txn_count compactSize uint as integer: {txn_count}")
-        print(f"txn_count field length: {txn_count_bytes_count} bytes")
+        print(f"Block header bytes: {block_header_size}")
+        print(f"Block txn_count: {block_txn_count}")
+        print(f"Block txn_count bytes: {block_txn_count_field_size}")
+        position += block_txn_count_field_size
+        print(f"position: {position}")
 
         print(f"Transactions:")
-        print(f"txn version in hex: {version_bytes.hex(' ')}")
-        print(f"txn_input_count: {txn_input_count}")
-        print(f"txn_input_count compactSize uint as bytes: {txn_input_count_bytes}")
-        print(f"txn_input_count compactSize uint in hex: {txn_input_count_bytes.hex(' ')}")
+        first_transaction_start = position
+        txn_version_size = 4
+        print(f"Transaction version bytes: {txn_version_size}")
+        position += txn_version_size
+        print(f"position: {position}")
+
+        txn_input_count, txn_input_count_field_size = read_compact_size(position, block_bytes)
+        txn_input_count_bytes = block_bytes[position:position + txn_input_count_field_size]
+        print(f"Transaction txn_input_count: {txn_input_count}")
+        print(f"Transaction txn_input_count_field_size: {txn_input_count_field_size}")
+        position += txn_input_count_field_size
+        print(f"position: {position}")
+
+        previous_output_hash_size = 32
+        previous_output_index_size = 4
+        print(f"previous_output_hash_size: {previous_output_hash_size}")
+        position += previous_output_hash_size
+        print(f"position: {position}")
+        print(f"previous_output_index_size: {previous_output_index_size}")
+        position += previous_output_index_size
+        print(f"position: {position}")
+
+        coinbase_script_length, coinbase_script_length_field_size = read_compact_size(position, block_bytes)
+        print(f"Coinbase script length: {coinbase_script_length}")
+        position += coinbase_script_length_field_size
+        print(f"position: {position}")
+
+        print(f"Coinbase script length field size: {coinbase_script_length_field_size}")
+        position += coinbase_script_length
+        print(f"position: {position}")
+
+        coinbase_sequence_size = 4
+        print(f"Coinbase sequence: {coinbase_sequence_size}")
+        position += coinbase_sequence_size
+        print(f"position: {position}")
+
+        txn_output_count, txn_output_count_field_size = read_compact_size(position, block_bytes)
+        txn_output_count_bytes = block_bytes[position:position + txn_output_count_field_size]
+        print(f"Transaction txn_output_count: {txn_output_count}")
+        print(f"Transaction txn_output_count_field_size: {txn_output_count_field_size}")
+        position += txn_output_count_field_size
+        print(f"position: {position}")
