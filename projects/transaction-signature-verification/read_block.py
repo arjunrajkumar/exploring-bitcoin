@@ -1,4 +1,4 @@
-from get_blockchain_info import load_block_hex, load_input_references
+from get_blockchain_info import load_block_hex, load_input_references, save_transaction_hex
 from decimal import Decimal
 from hashlib import sha256
 
@@ -72,8 +72,10 @@ def read_compact_size(start: int, block_bytes: bytes) -> tuple[int, int]:
 
 if __name__ == "__main__":
     input_references = load_input_references()
+    required_txids = {reference["txid"] for reference in input_references}
     block_hashes = {reference["block_hash"] for reference in input_references}
     block_headers = {}
+    matched_transactions = {}
 
     for block_hash in sorted(block_hashes):
         print(f"NEW Block--------------------------------------------------")
@@ -141,6 +143,7 @@ if __name__ == "__main__":
             position += txn_output_count_field_size
             # print(f"position: {position}")
 
+            txn_output_amounts = []
             # print(f"Going thru all {txn_output_count} transaction outputs")
             for output_index in range(txn_output_count):
                 txn_output_value_size = 8
@@ -150,6 +153,7 @@ if __name__ == "__main__":
                     byteorder="little",
                     signed=True,
                 )
+                txn_output_amounts.append(txn_output_value_amount)
                 txn_output_value_btc = Decimal(txn_output_value_amount) / Decimal(100_000_000)
                 # print(f"Txn Output value size: {txn_output_value_size}")
                 # print(f"Txn Output value bytes: {txn_output_value_bytes}")
@@ -175,5 +179,43 @@ if __name__ == "__main__":
             first_hash = sha256(txn_bytes).digest()
             second_hash = sha256(first_hash).digest()
             txn_id = second_hash[::-1].hex()
-            print(f"Transaction ID: {txn_id}")
-            print(f"position: {position}")
+            if txn_id in required_txids:
+                matched_transactions[txn_id] = {
+                    "output_amounts": txn_output_amounts,
+                    "bytes": txn_bytes,
+                }
+                print(f"Transaction ID: {txn_id}")
+                print(f"Output amounts (satoshis): {txn_output_amounts}")
+                print(f"position: {position}")
+
+    referenced_outputs = []
+    for input_index, reference in enumerate(input_references):
+        txn_id = reference["txid"]
+        vout = reference["vout"]
+        if txn_id not in matched_transactions:
+            raise ValueError(f"Referenced transaction not found: {txn_id}")
+
+        output_amounts = matched_transactions[txn_id]["output_amounts"]
+        if not 0 <= vout < len(output_amounts):
+            raise ValueError(f"Output {vout} does not exist in transaction {txn_id}")
+        amount = output_amounts[vout]
+        referenced_outputs.append({
+            "input_index": input_index,
+            "txid": txn_id,
+            "vout": vout,
+            "amount": amount,
+        })
+        print(f"Input {input_index}: {txn_id}:{vout} = {amount} satoshis")
+
+    largest_output = max(referenced_outputs, key=lambda output: output["amount"])
+    largest_txid = largest_output["txid"]
+    largest_txn_bytes = matched_transactions[largest_txid]["bytes"]
+    saved_path = save_transaction_hex(largest_txid, largest_txn_bytes.hex())
+    largest_amount_btc = Decimal(largest_output["amount"]) / Decimal(100_000_000)
+
+    print("\nLargest referenced output:")
+    print(f"Spending input index (starts at 0): {largest_output['input_index']}")
+    print(f"Previous transaction ID: {largest_txid}")
+    print(f"Previous output index (vout): {largest_output['vout']}")
+    print(f"Amount: {largest_output['amount']} satoshis ({largest_amount_btc:.8f} BTC)")
+    print(f"Raw transaction saved to: {saved_path}")
