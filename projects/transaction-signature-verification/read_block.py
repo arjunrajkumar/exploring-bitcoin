@@ -1,5 +1,5 @@
 from get_blockchain_info import load_block_hex, load_input_references
-
+from decimal import Decimal
 
 def load_block_bytes(block_hash: str) -> bytes:
     """Read a saved block's hex text and convert it to bytes."""
@@ -75,15 +75,19 @@ if __name__ == "__main__":
     block_headers = {}
 
     for block_hash in sorted(block_hashes):
-        block_header_size = 80;
-        position = 0
+        print(f"NEW Block--------------------------------------------------")
+        block_bytes = load_block_bytes(block_hash)
+        print(f"{block_bytes[:6].hex(' ')}.... {block_bytes[-6:].hex(' ')}")
+
+        position = 0;
         print(f"position: {position}")
+
+        block_header_size = 80;
         position += block_header_size
 
-        block_bytes = load_block_bytes(block_hash)
         block_txn_count, block_txn_count_field_size = read_compact_size(position, block_bytes)
         block_txn_count_bytes = block_bytes[block_header_size:block_header_size + block_txn_count_field_size]
-        print(f"NEW Block--------------------------------------------------")
+
         print(f"Block header bytes: {block_header_size}")
         print(f"Block txn_count: {block_txn_count}")
         print(f"Block txn_count bytes: {block_txn_count_field_size}")
@@ -133,3 +137,17 @@ if __name__ == "__main__":
         print(f"Transaction txn_output_count_field_size: {txn_output_count_field_size}")
         position += txn_output_count_field_size
         print(f"position: {position}")
+
+        txn_output_value_size = 8
+        txn_output_value_bytes = block_bytes[position:position + txn_output_value_size]
+        txn_output_value_amount = int.from_bytes(
+            txn_output_value_bytes,
+            byteorder="little",
+            signed=True,
+        )
+        txn_output_value_btc = Decimal(txn_output_value_amount) / Decimal(100_000_000)
+        print(f"Txn Output value size: {txn_output_value_size}")
+        print(f"Txn Output value bytes: {txn_output_value_bytes}")
+        print(f"Txn Output value amount in satoshis: {txn_output_value_amount}")
+        print(f"Txn Output value amount in bitcoin: {txn_output_value_btc}")
+        position += txn_output_value_size
