@@ -79,6 +79,12 @@ Do not restore the retired Weightless material or its deleted repository.
 - The current default problem notebook is
   `notebooks/verifying-bitcoin-transaction-signature/index.ipynb` in the blog repository.
   Use another notebook when the user names it.
+- When Arjun says `start Programming Bitcoin` or asks to resume Jimmy Song's book,
+  follow **Start the Programming Bitcoin workbook** in the blog's `AGENTS.md`.
+  The workbook is `notebooks/programmingbitcoin/index.ipynb` in the blog checkout.
+  The blog tracks the workbook on `main`. Arjun’s public `programmingbitcoin` fork
+  tracks the chapter files on `master`. Sync both before resuming on another laptop.
+  Jupyter saves publish to the matching repository. Verify both pushes at handoff.
 - Finish with the notebook open in the browser and both local servers running.
   Do not run exercise code, alter learner answers, or publish changes during startup.
 - This startup request authorizes running setup and server commands.
